@@ -12,6 +12,9 @@ from PIL import Image
 import numpy as np
 import tempfile
 import shutil
+import sys
+import re
+from io import StringIO
 
 logger = logging.getLogger(__name__)
 
@@ -156,20 +159,34 @@ class OCREngine:
             temp_output_dir = tempfile.mkdtemp(prefix="deepseek_ocr_")
             logger.info(f"Using temp output directory: {temp_output_dir}")
             
+            # Capture stdout since model might print results
+            old_stdout = sys.stdout
+            sys.stdout = captured_output = StringIO()
+            captured = ""
+            
             try:
                 logger.info("Calling model.infer()...")
-                result = self.model.infer(
-                    self.tokenizer,
-                    prompt=prompt,
-                    image_file=image_path,  # Pass string path, not PIL Image!
-                    output_path=temp_output_dir,
-                    base_size=self.base_size,
-                    image_size=self.image_size,
-                    crop_mode=self.crop_mode,
-                    test_compress=True,
-                    save_results=False
-                )
-                logger.info("Model inference completed successfully!")
+                
+                try:
+                    result = self.model.infer(
+                        self.tokenizer,
+                        prompt=prompt,
+                        image_file=image_path,  # Pass string path, not PIL Image!
+                        output_path=temp_output_dir,
+                        base_size=self.base_size,
+                        image_size=self.image_size,
+                        crop_mode=self.crop_mode,
+                        test_compress=True,
+                        save_results=True  # Changed to True to get output files
+                    )
+                finally:
+                    sys.stdout = old_stdout
+                    captured = captured_output.getvalue()
+                
+                logger.info(f"Model inference completed! Result type: {type(result)}")
+                logger.info(f"Result content: {result}")
+                if captured:
+                    logger.info(f"Captured output: {captured[:500]}...")  # First 500 chars
             finally:
                 # Clean up temporary directory
                 if Path(temp_output_dir).exists():
@@ -181,18 +198,77 @@ class OCREngine:
                     temp_image_path.unlink()
                     logger.debug(f"Cleaned up temp image: {temp_image_path}")
             
-            # Parse results
-            text = result.get("text", "")
-            markdown = result.get("markdown", "") if return_markdown else None
+            # Parse results - DeepSeek-OCR may return string directly or None
+            if result is None:
+                logger.warning("Model returned None - checking output directory and captured output...")
+                
+                # Try to read from output directory files
+                text = ""
+                markdown = None
+                
+                # Check for .txt files
+                output_files = sorted(Path(temp_output_dir).glob("*.txt"))
+                if output_files:
+                    logger.info(f"Found {len(output_files)} output files")
+                    with open(output_files[0], 'r', encoding='utf-8') as f:
+                        text = f.read()
+                    logger.info(f"Read text from {output_files[0].name}: {len(text)} characters")
+                
+                # Check for .md files
+                md_files = sorted(Path(temp_output_dir).glob("*.md"))
+                if md_files and return_markdown:
+                    with open(md_files[0], 'r', encoding='utf-8') as f:
+                        markdown = f.read()
+                    logger.info(f"Read markdown from {md_files[0].name}: {len(markdown)} characters")
+                    # If no text yet, use markdown
+                    if not text:
+                        text = markdown
+                
+                # If still no text, check captured output
+                if not text and captured:
+                    logger.info("Using captured stdout output")
+                    text = captured
+                
+                # Clean up special tokens if present
+                if text:
+                    text = self._clean_special_tokens(text)
+                
+                if not text:
+                    logger.error("No output found in files or captured output")
+                    
+            elif isinstance(result, str):
+                # Model returned text directly
+                logger.info(f"Model returned string directly: {len(result)} chars")
+                text = self._clean_special_tokens(result)
+                markdown = text if return_markdown else None
+                
+            elif isinstance(result, dict):
+                # Model returned dictionary
+                logger.info("Model returned dictionary")
+                text = result.get("text", "")
+                markdown = result.get("markdown", "") if return_markdown else None
+                text = self._clean_special_tokens(text)
+                
+            else:
+                logger.error(f"Unexpected result type: {type(result)}")
+                text = str(result) if result else ""
+                markdown = None
+            
+            logger.info(f"Final extracted text length: {len(text)} characters")
             
             # Extract tables if requested
             tables = []
-            if extract_tables:
+            if extract_tables and isinstance(result, dict):
                 tables = self._extract_tables(result, layout_info)
             
             # Calculate metrics
-            compression_ratio = result.get("compression_ratio", 10.0)
-            confidence = self._calculate_confidence(result)
+            if isinstance(result, dict):
+                compression_ratio = result.get("compression_ratio", 10.0)
+                confidence = self._calculate_confidence(result)
+            else:
+                # Use default values
+                compression_ratio = 10.0  # Default COC compression
+                confidence = 0.95  # High confidence if model ran successfully
             
             logger.info(f"OCR completed: {len(text)} characters extracted")
             logger.info(f"Compression ratio: {compression_ratio:.1f}x")
@@ -307,6 +383,28 @@ class OCREngine:
         
         logger.info(f"Extracted {len(tables)} tables")
         return tables
+    
+    def _clean_special_tokens(self, text: str) -> str:
+        """
+        Clean special tokens from DeepSeek-OCR output.
+        
+        Removes tokens like <|ref|>, <|det|>, etc.
+        """
+        import re
+        
+        if not text:
+            return text
+        
+        # Remove special tokens
+        text = re.sub(r'<\|ref\|>.*?<\|/ref\|>', '', text)
+        text = re.sub(r'<\|det\|>.*?<\|/det\|>', '', text)
+        text = re.sub(r'<\|.*?\|>', '', text)
+        
+        # Clean up extra whitespace
+        text = re.sub(r'\n\s*\n', '\n\n', text)
+        text = text.strip()
+        
+        return text
     
     def _calculate_confidence(self, result: Dict) -> float:
         """
