@@ -10,6 +10,8 @@ import torch
 from transformers import AutoModel, AutoTokenizer
 from PIL import Image
 import numpy as np
+import tempfile
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -125,17 +127,27 @@ class OCREngine:
                     prompt = "<image>\nFree OCR. "
             
             # Run inference
-            result = self.model.infer(
-                self.tokenizer,
-                prompt=prompt,
-                image_file=image,
-                output_path=None,
-                base_size=self.base_size,
-                image_size=self.image_size,
-                crop_mode=self.crop_mode,
-                test_compress=True,
-                save_results=False
-            )
+            # Create temporary output directory for DeepSeek-OCR
+            temp_output_dir = tempfile.mkdtemp(prefix="deepseek_ocr_")
+            logger.info(f"Using temp output directory: {temp_output_dir}")
+            
+            try:
+                result = self.model.infer(
+                    self.tokenizer,
+                    prompt=prompt,
+                    image_file=image,
+                    output_path=temp_output_dir,  # Provide actual path
+                    base_size=self.base_size,
+                    image_size=self.image_size,
+                    crop_mode=self.crop_mode,
+                    test_compress=True,
+                    save_results=False
+                )
+            finally:
+                # Clean up temporary directory
+                if Path(temp_output_dir).exists():
+                    shutil.rmtree(temp_output_dir, ignore_errors=True)
+                    logger.debug(f"Cleaned up temp directory: {temp_output_dir}")
             
             # Parse results
             text = result.get("text", "")
