@@ -113,11 +113,34 @@ class OCREngine:
         logger.info("Starting OCR recognition...")
         
         try:
-            # Prepare image
+            # Prepare image - DeepSeek-OCR needs a file path, not PIL Image
+            temp_image_path = None
+            
             if isinstance(image, (str, Path)):
-                image = Image.open(image)
+                # Already a path, use it directly
+                image_path = str(image)
+                logger.info(f"Using provided image path: {image_path}")
             elif isinstance(image, np.ndarray):
-                image = Image.fromarray(image)
+                # Convert numpy to PIL and save temporarily
+                pil_image = Image.fromarray(image)
+                temp_image_path = Path(tempfile.mktemp(suffix=".png", prefix="ocr_input_"))
+                pil_image.save(temp_image_path)
+                image_path = str(temp_image_path)
+                logger.info(f"Saved numpy image to temp file: {image_path}")
+            elif isinstance(image, Image.Image):
+                # PIL Image, save temporarily
+                temp_image_path = Path(tempfile.mktemp(suffix=".png", prefix="ocr_input_"))
+                image.save(temp_image_path)
+                image_path = str(temp_image_path)
+                logger.info(f"Saved PIL image to temp file: {image_path}")
+            else:
+                raise ValueError(f"Unsupported image type: {type(image)}")
+            
+            # Verify image file exists
+            if not Path(image_path).exists():
+                raise FileNotFoundError(f"Image file not found: {image_path}")
+            
+            logger.info(f"Image file verified, size: {Path(image_path).stat().st_size} bytes")
             
             # Prepare prompt
             if prompt is None:
@@ -126,28 +149,37 @@ class OCREngine:
                 else:
                     prompt = "<image>\nFree OCR. "
             
+            logger.info(f"Using prompt: {prompt[:50]}...")
+            
             # Run inference
             # Create temporary output directory for DeepSeek-OCR
             temp_output_dir = tempfile.mkdtemp(prefix="deepseek_ocr_")
             logger.info(f"Using temp output directory: {temp_output_dir}")
             
             try:
+                logger.info("Calling model.infer()...")
                 result = self.model.infer(
                     self.tokenizer,
                     prompt=prompt,
-                    image_file=image,
-                    output_path=temp_output_dir,  # Provide actual path
+                    image_file=image_path,  # Pass string path, not PIL Image!
+                    output_path=temp_output_dir,
                     base_size=self.base_size,
                     image_size=self.image_size,
                     crop_mode=self.crop_mode,
                     test_compress=True,
                     save_results=False
                 )
+                logger.info("Model inference completed successfully!")
             finally:
                 # Clean up temporary directory
                 if Path(temp_output_dir).exists():
                     shutil.rmtree(temp_output_dir, ignore_errors=True)
                     logger.debug(f"Cleaned up temp directory: {temp_output_dir}")
+                
+                # Clean up temporary image file if we created one
+                if temp_image_path and temp_image_path.exists():
+                    temp_image_path.unlink()
+                    logger.debug(f"Cleaned up temp image: {temp_image_path}")
             
             # Parse results
             text = result.get("text", "")
