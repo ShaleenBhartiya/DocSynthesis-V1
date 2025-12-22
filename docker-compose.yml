@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  docsynthesis-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docsynthesis-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./temp:/app/temp
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - DATA_DIR=/app/data
+      - CACHE_DIR=/app/data/cache
+      - LOG_DIR=/app/data/logs
+      - API_PORT=8000
+      - API_WORKERS=4
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - docsynthesis-network
+
+  # Optional: Redis for job queue (production)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: docsynthesis-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - docsynthesis-network
+
+  # Optional: Monitoring with Prometheus
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: docsynthesis-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./deployment/prometheus.yml:/etc/prometheus/prometheus.yml
+  #     - prometheus-data:/prometheus
+  #   networks:
+  #     - docsynthesis-network
+
+  # Optional: Grafana for dashboards
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: docsynthesis-grafana
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+  #   networks:
+  #     - docsynthesis-network
+
+networks:
+  docsynthesis-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
