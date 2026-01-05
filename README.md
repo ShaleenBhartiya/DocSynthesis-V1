@@ -506,43 +506,6 @@ If you use DocSynthesis-V1 in your research or project, please cite:
 - [ ] Cost optimization
 - [ ] Full-scale testing
 
----
-
-## 💬 Support
-
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/docsynthesis-v1/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/docsynthesis-v1/discussions)
-- **Email**: support@docsynthesis.ai
-
----
-
-## 🏆 Awards & Recognition
-
-- **IndiaAI IDP Challenge Submission** - 2024
-- **Best Solution Award Candidate** - Comprehensive technical implementation
-
----
-
-## 🙏 Acknowledgments
-
-We thank:
-- **IndiaAI Team** and **Digital India Corporation** for organizing this challenge
-- **DeepSeek AI** for the open-source OCR model
-- **Open-source AI community** for foundational research
-
----
-
-## 📞 Contact
-
-**BrainWave ML Team**
-
-- Website: [https://docsynthesis.ai](https://docsynthesis.ai)
-- Email: team@docsynthesis.ai
-- Twitter: [@DocSynthesisAI](https://twitter.com/DocSynthesisAI)
-
----
-
 <p align="center">
   <strong>Built with ❤️ for IndiaAI</strong><br>
   Contributing to India's AI-driven Digital Transformation
